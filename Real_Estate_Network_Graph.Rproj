@@ -11,3 +11,454 @@ Encoding: UTF-8
 
 RnwWeave: Sweave
 LaTeX: pdfLaTeX
+#######
+---
+title: "Real Estate Network Graph"
+output: html_document
+---
+
+```{r setup, include=FALSE,cache=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+options(scipen = 9999999)
+```
+
+### Overview
+
+#### The more houses real estate companies sell the more money they make,of course.  But unlike most industries they  cannot increase the number of transactions that take place.  No one can be coerced into selling their home.   What real estate companies can do though is increase the number of transactions that they participate in.  
+
+#### Not all real estate agents sell the same number of homes. In fact it is VERY skewed. In an attempt to increase their sales real estate companies try to recruit those top Listing agents.
+
+
+#### It happens to be the case that only a few agents get the majority of listings.  Real Estate managers get blinded by  the marquee number of the amount of property a Star Listing Agent sold. And every  month real estate managers  discuss and strategize  ways to recruit these top  agents. I think there is  a better approach. 
+
+#### These star agents rarely switch firms.  Unlike avg agents who work on a 50/50 split with the company star agents have a 80/20 split.  That is as high as one will find in the industry.  There is nothing a competing firm can offer a star agent to induce them to switch firms.  The result is the star agents stay where they are and any new people that come to an office were not recruited but came in on their own for whatever reasons they might have.  In sum, in an industry where the only way of increasing earnings is by getting more succesful sales people no sytematic appraoch is taken
+
+#### A word about the data.  This is real world data so we have annonymized it.  These are sales that took place over a 5 yr period.
+
+
+
+### The Packages
+
+```{r  ,warning=FALSE, message=FALSE}
+library(tidyverse)
+library(ggplot2)
+library(network)
+library(igraph)
+library(tidygraph)
+library(ggraph)
+library(forcats)
+library(scales)
+library(treemap)
+```
+
+
+### The Data
+
+```{r warning=FALSE, message=FALSE}
+NorthShore<-read_csv("NorthShoreAnonymized.csv")
+```
+
+
+```{r message=FALSE}
+Commision_Splits<- read_csv("Commison_Splits.csv")
+```
+
+
+#### Copy & paste the link below into your favorite browser and then copy & paste the spreadsheet into Excel or Google Sheets and  save it as a csv file entitled "NorthShore" then import it naming it "NorthShore"."
+
+#### https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3F_ZLfGeoQbW4IMXTXIiTmRMoLwYQeWcd3PguQwBGykjZVkJ3zeFRB-TK70sFomddf2e6_bMAYsxz/pubhtml
+
+#### Now do the same naming this "Commision_Splits" then import it calling it "Commision_Splits".
+#### https://docs.google.com/spreadsheets/d/e/2PACX-1vQIxlrQewNLZP88dp0yFefeiOw1_QRmdwNt_CJ3lGwoPehhc8eo3wIpWvebTg_K806sCxJW_KxhgAef/pubhtml
+
+```{r}
+#head(NorthShore)
+```
+
+```{r}
+#head(Commision_Splits)
+```
+
+## A Pie Chart View Of the World
+#### Real Estate Managers view of the world: A Pie Chart.  Managers fixate on the largest slices. A pie chart summarizes a real estate managers view of their mkt.  There may be hundreds of agents but these few do the majority of the sales.  If these agenst could be persuded to switch firms it would be a big boost for the office.
+
+
+```{r}
+#trees_10<-NorthShoreAnonymized
+trees_10<-NorthShore
+```
+
+```{r}
+trees_10<- trees_10%>%
+  select(ListingAgent,SoldPrice)
+```
+
+
+```{r}
+trees_10<-trees_10%>%drop_na()
+```
+
+```{r}
+trees_10$ListingAgent<- as.factor(trees_10$ListingAgent)
+```
+
+```{r}
+trees_10<- trees_10%>%top_n(10)
+```
+
+```{r}
+trees_10<- trees_10%>%
+  group_by(ListingAgent)%>%
+  count()%>%
+  ungroup()%>%
+  mutate(per=trees_10$SoldPrice/sum(trees_10$SoldPrice))%>%
+  arrange(desc(ListingAgent))
+trees_10
+```
+
+```{r}
+trees_10<- trees_10%>%
+          mutate(percent=trees_10$per*100)
+```
+
+```{r}
+#head(trees_10,1)
+```
+
+```{r}
+ggplot(data=trees_10)+
+  geom_bar(aes(x="", y=per, fill=ListingAgent), stat="identity", width = 1)+
+  coord_polar("y", start=0)+
+  theme_void()+
+  geom_text(aes(x=1, y = cumsum(per) - per/2, label=round(percent,digits = 1)))+
+  ggtitle("R.E. Managers of the World")
+```
+
+## Treemap
+
+### But this Pie chart only shows how the 10 most succesful Listing Agents fared compared against each other.  Next we will create a Treemap to see how these 10 fared compared to  all of the others and then we will see just why managers fixate on them. In fact, 21 ListingAgents out hundreds listed appx 1/3 of all of the homes in this market.
+
+
+
+```{r}
+tree_data<- NorthShore
+```
+
+
+
+```{r}
+tree_data$ListingAgent<- as.factor(tree_data$ListingAgent)
+```
+
+
+```{r}
+tree_data <- tree_data%>%
+  select(ListingAgent,SoldPrice)
+```
+
+```{r}
+tree_data<- tree_data%>%
+  group_by(ListingAgent)%>%
+  ungroup()
+```
+
+```{r}
+#dim(tree_data)
+```
+
+```{r}
+#head(tree_data,1)
+```
+
+```{r}
+treemap(tree_data,
+        index = "ListingAgent",
+        vSize = "SoldPrice",
+        type = "index")
+```
+
+
+
+
+## Network Graph
+
+### Why a network graph? 
+
+#### What we will see is that while star agents get the bulk of the lisitngs these many listings are sold by the  same agents over and over.  Each Listing Agent has a coterie of Selling agents. When a Listing agent gets a new listing some agents will say 'I always like Fran's listing so  I am going to go to that Open House.'  There is so much in that sentence but for this project we will just leave it at that this agent knows from experience that they often have  the buyer for 'Fran's' listing.
+
+
+#### There are two parts to a network graph.  The Nodes and the Edges.  The Nodes are the points and the Edges are lines connecting those points.  In the following lines we will at first make a single list of all of the names  ignoring whether they were the Listing Agent or the Sellling Agent.  Then we will make a  table of the relationships (which in Network parlance is known as an **adjacency matrix**) between each pair of agents who had the lisitng and who the buyer.
+
+
+#### This next part is such an unabashed copy of Jess Sadler's Network Graph tutorial ("https://www.jessesadler.com/post/network-analysis-with-r/") that we will use those same labels. 
+
+#### Here we  make a list of just the names of the Listing and Selling agents silmutaneously renaming the column to "label".
+####  Remember  we are using real data so I have annoymized the data replacing the names with numbers.
+
+#### To make our graphs readable we have to limit the amount of data.  Let us look at only the top 50 pairs of agents.
+
+```{r}
+Network_Data<- NorthShore%>%
+  group_by(ListingAgent, SellingAgent)%>%
+  ungroup()
+```
+
+
+```{r}
+?select
+```
+
+```{r}
+Network_Data<-  select(Network_Data, "SellingAgent","ListingAgent","SoldPrice")
+```
+
+```{r}
+head(Network_Data)
+```
+
+
+```{r}
+Network_Data_50<- Network_Data%>% top_n(50)
+```
+
+
+
+```{r}
+sources<- Network_Data_50 %>%
+  distinct(ListingAgent)%>%
+  rename(label=ListingAgent)
+```
+
+```{r}
+#head(sources,1)
+```
+
+```{r}
+destinations <-Network_Data_50%>%
+    distinct(SellingAgent)%>%
+    rename(label=SellingAgent)
+```
+
+```{r}
+#head(destinations,1)
+```
+
+#### And we will combine those two lists creating the new list "Nodes"
+```{r}
+nodes <-full_join(sources , destinations, by = "label")
+```
+
+```{r}
+#head(nodes)
+```
+
+
+#### Network graphs require a unique identifying number.
+```{r}
+nodes<- nodes%>% rowid_to_column("id")
+```
+
+```{r}
+#head(nodes)
+```
+
+
+#### Next we will work on the connections between the Agents known as the  Edges in Network graphing.  First we create a table where the deals of each combination of agents are summed.  In other words if Ann and Betty did three deals this table will show one line with the total of those 3 transactions summed.  Then we Left_Join our Nodes tho this new data framed 
+```{r}
+per_route<- Network_Data_50%>%
+  group_by(ListingAgent,SellingAgent)%>%
+  summarise(weight=n() ) %>%
+  ungroup()
+```
+
+
+#### Lets compare Nodes to the new data frame .
+```{r}
+#head(nodes)
+```
+
+```{r}
+#head(per_route)
+```
+
+
+```{r}
+edges<- per_route%>%
+  left_join(nodes, by =c("ListingAgent"="label"))%>%
+  rename(from =id)
+```
+
+```{r}
+#head(edges)
+```
+
+
+```{r}
+edges<-edges%>%
+  left_join(nodes, by = c("SellingAgent"="label"))%>%
+  rename(to=id)
+```
+
+
+```{r}
+head(edges)
+```
+
+
+```{r}
+#head(edges)
+```
+
+
+```{r}
+edges<- select(edges, from, to , weight)
+```
+
+
+#### Network transforms the data from a ordinary DF to one where there are relationships between the elelments.
+
+```{r}
+routes_network<- network(edges, vertex.attr = nodes, matrix.type="edgelist",ignore.eval=FALSE)
+```
+
+
+```{r}
+class(routes_network)
+```
+
+```{r}
+routes_network
+```
+
+
+#### Next we will start graphing using the Network package.
+#### It is the clusters that interest us here. 
+#### 
+
+```{r}
+plot(routes_network, vertex.cex=3)
+```
+
+
+#### Now lets switch the Network package to the IGRAPH package.
+
+```{r}
+detach(package:network)
+rm(routes_network)
+```
+
+#### Igraph calls up the already established Edges and Nodes
+
+```{r}
+routes_igraph<-graph_from_data_frame( d= edges , vertices = nodes, directed =TRUE)
+```
+
+#### Here is the Adjancy matrix showing every relationships between our realtors.
+```{r}
+routes_igraph
+```
+
+#### Similar to the Network graph but the nodes are labled.
+
+
+```{r}
+plot(routes_igraph,edge.arrow.size = 0.2)
+```
+
+
+```{r}
+plot(routes_igraph, layout= layout_with_graphopt,  edge.arrow.size = 0.2)
+```
+
+### Next let us try Tidygraph and GGraph.
+
+
+```{r}
+routes_tidy<- tbl_graph(nodes=nodes,edges=edges,directed = TRUE)
+```
+
+
+
+```{r}
+routes_tidy
+```
+
+
+```{r}
+routes_tidy %>%
+  activate(edges)%>%
+  arrange(desc(weight))
+```
+
+#### Sparcer?  True.  But think of it as a litmust test: is it worth developing this graph? Yes becasue there are number clusters.
+
+```{r}
+ggraph(routes_tidy)+
+  geom_edge_link()+
+  geom_node_point()+
+  theme_graph()
+```
+
+
+```{r warning=FALSE,message=FALSE}
+ggraph(routes_tidy, layout = "graphopt") + 
+  geom_node_point() +
+  geom_edge_link(aes(width = weight), alpha = 0.8) + 
+  scale_edge_width(range = c(0.2, 2)) +
+  geom_node_text(aes(label = label), repel = TRUE) +
+  labs(edge_width = "weight") +
+  theme_graph()
+```
+
+
+
+
+```{r}
+#ggsave("Network.png")
+```
+
+
+
+
+
+
+```{r}
+A<-knitr::include_graphics("Network1.png")
+A
+```
+
+#### At  last we see who the real estate companies should target for recruitmant   Not the unpoachable star agents but the satelite agents.  For one thing they are poachable and for the other becasue of their much lower commision split the company will make significantly more money.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
